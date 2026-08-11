@@ -22,14 +22,43 @@ import {
   formatDate,
 } from "@/lib/format";
 import { useLocationTracking } from "@/hooks/useLocationTracking";
+import { giveKudos, removeKudos } from "@/lib/social";
 
 export default function HomeScreen() {
   const { user, logout } = useAuth();
   const [activities, setActivities] = useState<Activity[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const { isTracking, points, totalDistance, start, stop } = useLocationTracking();
+  const { isTracking, points, totalDistance, start, stop } =
+    useLocationTracking();
+  async function handleToggleKudos(activity: Activity) {
+    // Optimistic update: change the UI immediately, before the network call finishes
+    setActivities((prev) =>
+      prev.map((a) =>
+        a.id === activity.id
+          ? {
+              ...a,
+              hasGivenKudos: !a.hasGivenKudos,
+              kudosCount: a.hasGivenKudos ? a.kudosCount - 1 : a.kudosCount + 1,
+            }
+          : a,
+      ),
+    );
 
+    try {
+      if (activity.hasGivenKudos) {
+        await removeKudos(activity.id);
+      } else {
+        await giveKudos(activity.id);
+      }
+    } catch (err) {
+      console.error("Kudos toggle failed:", err);
+      // Revert on failure
+      setActivities((prev) =>
+        prev.map((a) => (a.id === activity.id ? activity : a)),
+      );
+    }
+  }
   async function fetchActivities() {
     try {
       const res = await api.get("/activities");
@@ -53,12 +82,12 @@ export default function HomeScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={["top"]}>
       {/* Header Section */}
       <View style={styles.header}>
         <View>
           <Text style={styles.welcomeSubtitle}>WELCOME BACK</Text>
-          <Text style={styles.greeting}>{user?.name ?? 'Runner'}</Text>
+          <Text style={styles.greeting}>{user?.name ?? "Runner"}</Text>
         </View>
         <Pressable style={styles.logoutButton} onPress={logout}>
           <Ionicons name="log-out-outline" size={20} color="#ff453a" />
@@ -86,7 +115,10 @@ export default function HomeScreen() {
       <Pressable
         style={[
           styles.testBanner,
-          { backgroundColor: isTracking ? '#ff453a20' : '#30d15820', borderColor: isTracking ? '#ff453a' : '#30d158' },
+          {
+            backgroundColor: isTracking ? "#ff453a20" : "#30d15820",
+            borderColor: isTracking ? "#ff453a" : "#30d158",
+          },
         ]}
         onPress={async () => {
           if (isTracking) {
@@ -100,9 +132,21 @@ export default function HomeScreen() {
           }
         }}
       >
-        <View style={[styles.statusDot, { backgroundColor: isTracking ? '#ff453a' : '#30d158' }]} />
-        <Text style={[styles.testBannerText, { color: isTracking ? '#ff453a' : '#30d158' }]}>
-          {isTracking ? `Tracking Active (${(totalDistance / 1000).toFixed(2)} km)` : 'Tap to quick-test background tracker'}
+        <View
+          style={[
+            styles.statusDot,
+            { backgroundColor: isTracking ? "#ff453a" : "#30d158" },
+          ]}
+        />
+        <Text
+          style={[
+            styles.testBannerText,
+            { color: isTracking ? "#ff453a" : "#30d158" },
+          ]}
+        >
+          {isTracking
+            ? `Tracking Active (${(totalDistance / 1000).toFixed(2)} km)`
+            : "Tap to quick-test background tracker"}
         </Text>
       </Pressable>
 
@@ -116,24 +160,43 @@ export default function HomeScreen() {
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} tintColor="#fc4c02" />
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            tintColor="#fc4c02"
+          />
         }
         ListEmptyComponent={
           !isLoading ? (
             <View style={styles.emptyContainer}>
               <Ionicons name="fitness-outline" size={48} color="#3a3a3c" />
-              <Text style={styles.emptyText}>No activities yet. Hit record to start your first run.</Text>
+              <Text style={styles.emptyText}>
+                No activities yet. Hit record to start your first run.
+              </Text>
             </View>
           ) : null
         }
         renderItem={({ item }) => (
           <View style={styles.card}>
             <View style={styles.cardHeader}>
-              <View style={styles.typeBadge}>
-                <Text style={styles.cardType}>{item.type}</Text>
+              <View style={styles.userRow}>
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>
+                    {item.user.name.charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+                <View>
+                  <Text style={styles.cardUser}>{item.user.name}</Text>
+                  <View style={styles.typeBadge}>
+                    <Text style={styles.typeBadgeText}>{item.type}</Text>
+                  </View>
+                </View>
               </View>
               <Text style={styles.cardDate}>{formatDate(item.startedAt)}</Text>
             </View>
+
+            <View style={styles.divider} />
+
             <View style={styles.statsRow}>
               <View style={styles.stat}>
                 <Text style={styles.statValue}>
@@ -156,6 +219,39 @@ export default function HomeScreen() {
                 <Text style={styles.statLabel}>PACE</Text>
               </View>
             </View>
+            <View style={styles.divider} />
+
+            <View style={styles.socialRow}>
+              <Pressable
+                style={styles.socialButton}
+                onPress={() => handleToggleKudos(item)}
+              >
+                <Ionicons
+                  name={item.hasGivenKudos ? "heart" : "heart-outline"}
+                  size={20}
+                  color={item.hasGivenKudos ? "#fc4c02" : "#8e8e93"}
+                />
+                <Text
+                  style={[
+                    styles.socialCount,
+                    item.hasGivenKudos && styles.socialCountActive,
+                  ]}
+                >
+                  {item.kudosCount}
+                </Text>
+              </Pressable>
+
+              <Link href={`/activity/${item.id}`} asChild>
+                <Pressable style={styles.socialButton}>
+                  <Ionicons
+                    name="chatbubble-outline"
+                    size={19}
+                    color="#8e8e93"
+                  />
+                  <Text style={styles.socialCount}>{item.commentCount}</Text>
+                </Pressable>
+              </Link>
+            </View>
           </View>
         )}
       />
@@ -164,9 +260,9 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: "#0b0b0c", 
+  container: {
+    flex: 1,
+    backgroundColor: "#0b0b0c",
     paddingHorizontal: 20,
     paddingTop: 12,
   },
@@ -182,9 +278,9 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 1.2,
   },
-  greeting: { 
-    fontSize: 24, 
-    fontWeight: "800", 
+  greeting: {
+    fontSize: 24,
+    fontWeight: "800",
     color: "#f5f5f7",
     letterSpacing: -0.5,
   },
@@ -211,9 +307,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 8,
   },
-  primaryButtonText: { 
-    color: "#fff", 
-    fontWeight: "700", 
+  primaryButtonText: {
+    color: "#fff",
+    fontWeight: "700",
     fontSize: 14,
     letterSpacing: 1,
   },
@@ -230,9 +326,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#2c2c2e",
   },
-  secondaryButtonText: { 
-    color: "#f5f5f7", 
-    fontWeight: "600", 
+  secondaryButtonText: {
+    color: "#f5f5f7",
+    fontWeight: "600",
     fontSize: 13,
   },
   testBanner: {
@@ -261,8 +357,8 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
     marginBottom: 12,
   },
-  list: { 
-    gap: 12, 
+  list: {
+    gap: 12,
     paddingBottom: 32,
   },
   emptyContainer: {
@@ -272,15 +368,16 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingHorizontal: 32,
   },
-  emptyText: { 
-    textAlign: "center", 
-    color: "#8e8e93", 
+  emptyText: {
+    textAlign: "center",
+    color: "#8e8e93",
     fontSize: 14,
     lineHeight: 20,
   },
-  card: { 
-    backgroundColor: "#1c1c1e", 
-    borderRadius: 16, 
+
+  card: {
+    backgroundColor: "#1c1c1e",
+    borderRadius: 18,
     padding: 18,
     borderWidth: 1,
     borderColor: "#2c2c2e",
@@ -289,50 +386,95 @@ const styles = StyleSheet.create({
   cardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "flex-start",
+  },
+  userRow: {
+    flexDirection: "row",
     alignItems: "center",
+    gap: 10,
+  },
+  avatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "#fc4c02",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarText: {
+    color: "#fff",
+    fontWeight: "800",
+    fontSize: 15,
+  },
+  cardUser: {
+    fontWeight: "700",
+    fontSize: 15,
+    color: "#f5f5f7",
   },
   typeBadge: {
     backgroundColor: "#2c2c2e",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
     borderRadius: 6,
+    marginTop: 4,
+    alignSelf: "flex-start",
   },
-  cardType: { 
-    fontWeight: "700", 
-    fontSize: 11, 
+  typeBadgeText: {
+    fontSize: 10,
+    fontWeight: "700",
     color: "#fc4c02",
-    letterSpacing: 1,
+    letterSpacing: 0.5,
   },
-  cardDate: { 
+  cardDate: {
     color: "#8e8e93",
     fontSize: 12,
     fontWeight: "500",
   },
-  statsRow: { 
-    flexDirection: "row", 
-    justifyContent: "space-between",
+  divider: {
+    height: 1,
+    backgroundColor: "#2c2c2e",
+  },
+  statsRow: {
+    flexDirection: "row",
     alignItems: "center",
   },
-  stat: { 
+  stat: {
     flex: 1,
-    alignItems: "center", 
+    alignItems: "center",
   },
   statDivider: {
     width: 1,
-    height: 24,
+    height: 28,
     backgroundColor: "#2c2c2e",
   },
-  statValue: { 
-    fontSize: 18, 
+  statValue: {
+    fontSize: 17,
     fontWeight: "700",
     color: "#f5f5f7",
-    fontVariant: ['tabular-nums'],
+    fontVariant: ["tabular-nums"],
   },
-  statLabel: { 
-    fontSize: 10, 
-    fontWeight: "600",
-    color: "#8e8e93", 
+  statLabel: {
+    fontSize: 9,
+    fontWeight: "700",
+    color: "#8e8e93",
     marginTop: 4,
     letterSpacing: 0.8,
+  },
+  socialRow: {
+    flexDirection: "row",
+    gap: 20,
+  },
+  socialButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  socialCount: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#8e8e93",
+  },
+  socialCountActive: {
+    color: "#fc4c02",
   },
 });
