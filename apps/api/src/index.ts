@@ -14,6 +14,16 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 4000;
 
+function shapeActivity(activity: any, currentUserId: string) {
+  return {
+    ...activity,
+    kudosCount: activity._count.kudos,
+    commentCount: activity._count.comments,
+    hasGivenKudos: activity.kudos.length > 0,
+    kudos: undefined,
+    _count: undefined,
+  };
+}
 app.get("/", (req, res) => {
   res.json({ status: "ok", message: "Kilomeet API is running" });
 });
@@ -25,6 +35,30 @@ app.get("/me", authenticate, async (req: AuthRequest, res) => {
   });
 
   res.json(user);
+});
+
+const updateProfileSchema = yup.object({
+  name: yup.string().trim().min(2, "Name must be at least 2 characters").required(),
+});
+
+app.patch("/me", authenticate, async (req: AuthRequest, res) => {
+  try {
+    const { name } = await updateProfileSchema.validate(req.body, { abortEarly: true });
+
+    const user = await prisma.user.update({
+      where: { id: req.userId },
+      data: { name },
+      select: { id: true, name: true, email: true },
+    });
+
+    res.json(user);
+  } catch (err: any) {
+    if (err instanceof yup.ValidationError) {
+      return res.status(400).json({ error: err.message });
+    }
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong" });
+  }
 });
 
 app.get("/activities", authenticate, async (req: AuthRequest, res) => {
@@ -46,14 +80,7 @@ app.get("/activities", authenticate, async (req: AuthRequest, res) => {
     });
 
     // Reshape the response so the mobile app gets clean, simple fields
-    const shaped = activities.map((a) => ({
-      ...a,
-      kudosCount: a._count.kudos,
-      commentCount: a._count.comments,
-      hasGivenKudos: a.kudos.length > 0,
-      kudos: undefined, // remove the raw array, we only needed it to compute hasGivenKudos
-      _count: undefined,
-    }));
+    const shaped = activities.map((a) => shapeActivity(a, req.userId!));
 
     res.json(shaped);
   } catch (err) {
@@ -61,6 +88,8 @@ app.get("/activities", authenticate, async (req: AuthRequest, res) => {
     res.status(500).json({ error: "Something went wrong" });
   }
 });
+
+
 app.post("/activities", authenticate, async (req: AuthRequest, res) => {
   try {
     const { type, distance, duration, startedAt } =
@@ -161,6 +190,54 @@ app.get("/followers", authenticate, async (req: AuthRequest, res) => {
   });
 
   res.json(follows.map((f) => f.follower));
+});
+
+app.get("/users/:id", authenticate, async (req: AuthRequest, res) => {
+  const targetUser = await prisma.user.findUnique({
+    where: { id: req.params.id },
+    select: { id: true, name: true, email: true, createdAt: true },
+  });
+
+  if (!targetUser) {
+    return res.status(404).json({ error: "User not found" });
+  }
+
+  const [followerCount, followingCount, activityCount] = await Promise.all([
+    prisma.follow.count({ where: { followingId: req.params.id } }),
+    prisma.follow.count({ where: { followerId: req.params.id } }),
+    prisma.activity.count({ where: { userId: req.params.id } }),
+  ]);
+
+  const isFollowing = await prisma.follow.findUnique({
+    where: {
+      followerId_followingId: { followerId: req.userId!, followingId: req.params.id },
+    },
+  });
+
+  res.json({
+    ...targetUser,
+    followerCount,
+    followingCount,
+    activityCount,
+    isFollowing: !!isFollowing,
+    isSelf: req.params.id === req.userId,
+  });
+});
+
+app.get("/users/:id/activities", authenticate, async (req: AuthRequest, res) => {
+  const activities = await prisma.activity.findMany({
+    where: { userId: req.params.id },
+    orderBy: { startedAt: "desc" },
+    include: {
+      user: { select: { id: true, name: true } },
+      _count: { select: { kudos: true, comments: true } },
+      kudos: { where: { userId: req.userId }, select: { id: true } },
+    },
+  });
+
+ const shaped = activities.map((a) => shapeActivity(a, req.userId!));
+
+  res.json(shaped);
 });
 
 app.get("/users/:id/stats", authenticate, async (req: AuthRequest, res) => {

@@ -23,12 +23,15 @@ import {
 } from "@/lib/format";
 import { useLocationTracking } from "@/hooks/useLocationTracking";
 import { giveKudos, removeKudos } from "@/lib/social";
+import { ActivityFeedSkeleton } from "@/components/ui/Skeletons";
+import { EmptyView, ErrorView } from "@/components/ui/StateViews";
 
 export default function HomeScreen() {
   const { user, logout } = useAuth();
   const [activities, setActivities] = useState<Activity[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const { isTracking, points, totalDistance, start, stop } =
     useLocationTracking();
   async function handleToggleKudos(activity: Activity) {
@@ -61,13 +64,21 @@ export default function HomeScreen() {
   }
   async function fetchActivities() {
     try {
+      setError(null);
       const res = await api.get("/activities");
       setActivities(res.data);
     } catch (err) {
       console.error("Failed to fetch activities:", err);
+      // Only show a full error screen if we have NOTHING to show yet.
+      // If we already have activities loaded, keep showing them —
+      // don't nuke a working feed just because a refresh failed.
+      if (activities.length === 0) {
+        setError("Could not load your feed");
+      } else {
+        setError("__TOAST__"); // signal a lightweight, non-blocking notice instead
+      }
     }
   }
-
   useFocusEffect(
     useCallback(() => {
       setIsLoading(true);
@@ -89,9 +100,16 @@ export default function HomeScreen() {
           <Text style={styles.welcomeSubtitle}>WELCOME BACK</Text>
           <Text style={styles.greeting}>{user?.name ?? "Runner"}</Text>
         </View>
-        <Pressable style={styles.logoutButton} onPress={logout}>
-          <Ionicons name="log-out-outline" size={20} color="#ff453a" />
-        </Pressable>
+        <View style={styles.headerButtons}>
+          <Link href="/explore" asChild>
+            <Pressable style={styles.iconButton}>
+              <Ionicons name="search" size={20} color="#f5f5f7" />
+            </Pressable>
+          </Link>
+          <Pressable style={styles.logoutButton} onPress={logout}>
+            <Ionicons name="log-out-outline" size={20} color="#ff453a" />
+          </Pressable>
+        </View>
       </View>
 
       {/* Primary Action Buttons */}
@@ -152,109 +170,125 @@ export default function HomeScreen() {
 
       {/* Feed Section Header */}
       <Text style={styles.sectionTitle}>RECENT ACTIVITIES</Text>
-
+      {error === "__TOAST__" && (
+        <View style={styles.inlineErrorBanner}>
+          <Text style={styles.inlineErrorText}>
+            Couldn't refresh — showing saved data
+          </Text>
+        </View>
+      )}
       {/* Activities List */}
-      <FlatList
-        data={activities}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.list}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={isRefreshing}
-            onRefresh={handleRefresh}
-            tintColor="#fc4c02"
-          />
-        }
-        ListEmptyComponent={
-          !isLoading ? (
-            <View style={styles.emptyContainer}>
-              <Ionicons name="fitness-outline" size={48} color="#3a3a3c" />
-              <Text style={styles.emptyText}>
-                No activities yet. Hit record to start your first run.
-              </Text>
-            </View>
-          ) : null
-        }
-        renderItem={({ item }) => (
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <View style={styles.userRow}>
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>
-                    {item.user.name.charAt(0).toUpperCase()}
+      {isLoading ? (
+        <ActivityFeedSkeleton />
+      ) : (
+        <FlatList
+          data={activities}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.list}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={handleRefresh}
+              tintColor="#fc4c02"
+            />
+          }
+
+          ListEmptyComponent={
+            error && error !== "__TOAST__" ? (
+              <ErrorView message={error} onRetry={fetchActivities} />
+            ) : (
+              <EmptyView
+                icon="fitness-outline"
+                title="No activities yet"
+                subtitle="Hit record to start your first run, or follow people to see their activity here."
+              />
+            )
+          }
+          renderItem={({ item }) => (
+            <View style={styles.card}>
+              <View style={styles.cardHeader}>
+                <Link href={`/user/${item.userId}`} asChild>
+                  <Pressable style={styles.userRow}>
+                    <View style={styles.avatar}>
+                      <Text style={styles.avatarText}>
+                        {item.user.name.charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                    <View>
+                      <Text style={styles.cardUser}>{item.user.name}</Text>
+                      <View style={styles.typeBadge}>
+                        <Text style={styles.typeBadgeText}>{item.type}</Text>
+                      </View>
+                    </View>
+                  </Pressable>
+                </Link>
+                <Text style={styles.cardDate}>
+                  {formatDate(item.startedAt)}
+                </Text>
+              </View>
+
+              <View style={styles.divider} />
+
+              <View style={styles.statsRow}>
+                <View style={styles.stat}>
+                  <Text style={styles.statValue}>
+                    {formatDistance(item.distance)}
                   </Text>
+                  <Text style={styles.statLabel}>DISTANCE</Text>
                 </View>
-                <View>
-                  <Text style={styles.cardUser}>{item.user.name}</Text>
-                  <View style={styles.typeBadge}>
-                    <Text style={styles.typeBadgeText}>{item.type}</Text>
-                  </View>
+                <View style={styles.statDivider} />
+                <View style={styles.stat}>
+                  <Text style={styles.statValue}>
+                    {formatDuration(item.duration)}
+                  </Text>
+                  <Text style={styles.statLabel}>DURATION</Text>
+                </View>
+                <View style={styles.statDivider} />
+                <View style={styles.stat}>
+                  <Text style={styles.statValue}>
+                    {formatPace(item.distance, item.duration)}
+                  </Text>
+                  <Text style={styles.statLabel}>PACE</Text>
                 </View>
               </View>
-              <Text style={styles.cardDate}>{formatDate(item.startedAt)}</Text>
-            </View>
+              <View style={styles.divider} />
 
-            <View style={styles.divider} />
-
-            <View style={styles.statsRow}>
-              <View style={styles.stat}>
-                <Text style={styles.statValue}>
-                  {formatDistance(item.distance)}
-                </Text>
-                <Text style={styles.statLabel}>DISTANCE</Text>
-              </View>
-              <View style={styles.statDivider} />
-              <View style={styles.stat}>
-                <Text style={styles.statValue}>
-                  {formatDuration(item.duration)}
-                </Text>
-                <Text style={styles.statLabel}>DURATION</Text>
-              </View>
-              <View style={styles.statDivider} />
-              <View style={styles.stat}>
-                <Text style={styles.statValue}>
-                  {formatPace(item.distance, item.duration)}
-                </Text>
-                <Text style={styles.statLabel}>PACE</Text>
-              </View>
-            </View>
-            <View style={styles.divider} />
-
-            <View style={styles.socialRow}>
-              <Pressable
-                style={styles.socialButton}
-                onPress={() => handleToggleKudos(item)}
-              >
-                <Ionicons
-                  name={item.hasGivenKudos ? "heart" : "heart-outline"}
-                  size={20}
-                  color={item.hasGivenKudos ? "#fc4c02" : "#8e8e93"}
-                />
-                <Text
-                  style={[
-                    styles.socialCount,
-                    item.hasGivenKudos && styles.socialCountActive,
-                  ]}
+              <View style={styles.socialRow}>
+                <Pressable
+                  style={styles.socialButton}
+                  onPress={() => handleToggleKudos(item)}
                 >
-                  {item.kudosCount}
-                </Text>
-              </Pressable>
-
-              <Link href={`/activity/${item.id}`} asChild>
-                <Pressable style={styles.socialButton}>
                   <Ionicons
-                    name="chatbubble-outline"
-                    size={19}
-                    color="#8e8e93"
+                    name={item.hasGivenKudos ? "heart" : "heart-outline"}
+                    size={20}
+                    color={item.hasGivenKudos ? "#fc4c02" : "#8e8e93"}
                   />
-                  <Text style={styles.socialCount}>{item.commentCount}</Text>
+                  <Text
+                    style={[
+                      styles.socialCount,
+                      item.hasGivenKudos && styles.socialCountActive,
+                    ]}
+                  >
+                    {item.kudosCount}
+                  </Text>
                 </Pressable>
-              </Link>
+
+                <Link href={`/activity/${item.id}`} asChild>
+                  <Pressable style={styles.socialButton}>
+                    <Ionicons
+                      name="chatbubble-outline"
+                      size={19}
+                      color="#8e8e93"
+                    />
+                    <Text style={styles.socialCount}>{item.commentCount}</Text>
+                  </Pressable>
+                </Link>
+              </View>
             </View>
-          </View>
-        )}
-      />
+          )}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -295,6 +329,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 12,
     marginBottom: 16,
+  },
+  headerButtons: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  iconButton: {
+    backgroundColor: "#1c1c1e",
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#2c2c2e",
   },
   primaryRecordButton: {
     flex: 2,
@@ -476,5 +521,19 @@ const styles = StyleSheet.create({
   },
   socialCountActive: {
     color: "#fc4c02",
+  },
+  inlineErrorBanner: {
+    backgroundColor: "#3a1f1f",
+    borderWidth: 1,
+    borderColor: "#ff453a",
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 12,
+  },
+  inlineErrorText: {
+    color: "#ff453a",
+    fontSize: 12,
+    fontWeight: "600",
+    textAlign: "center",
   },
 });

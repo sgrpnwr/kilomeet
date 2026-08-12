@@ -1,19 +1,17 @@
 import { useState, useEffect, useRef } from "react";
+import { View, Text, Pressable, StyleSheet, Alert } from "react-native";
 import {
-  View,
-  Text,
-  Pressable,
-  StyleSheet,
-  Alert,
-  Platform,
-} from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import MapView, { Polyline, Marker } from "react-native-maps";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useLocationTracking } from "@/hooks/useLocationTracking";
 import { api } from "@/lib/api";
 import { formatDistance, formatDuration, formatPace } from "@/lib/format";
+import { CloseButton } from "@/components/ui/CloseButton";
+import * as Location from "expo-location";
 
 export default function TrackScreen() {
   const { isTracking, points, totalDistance, start, stop } =
@@ -23,6 +21,29 @@ export default function TrackScreen() {
   const [isMaximized, setIsMaximized] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startedAtRef = useRef<Date | null>(null);
+  const [currentLocation, setCurrentLocation] = useState<{
+  latitude: number;
+  longitude: number;
+} | null>(null);
+
+useEffect(() => {
+  (async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") return;
+
+      const loc = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      setCurrentLocation({
+        latitude: loc.coords.latitude,
+        longitude: loc.coords.longitude,
+      });
+    } catch (err) {
+      console.error("Failed to get current location:", err);
+    }
+  })();
+}, []);
 
   useEffect(() => {
     if (isTracking) {
@@ -78,12 +99,14 @@ export default function TrackScreen() {
     }
   }
 
-  const initialRegion = {
-    latitude: points[points.length - 1]?.latitude ?? 37.78825,
-    longitude: points[points.length - 1]?.longitude ?? -122.4324,
-    latitudeDelta: 0.005,
-    longitudeDelta: 0.005,
-  };
+  const fallback = currentLocation ?? { latitude: 37.78825, longitude: -122.4324 };
+
+const initialRegion = {
+  latitude: points[points.length - 1]?.latitude ?? fallback.latitude,
+  longitude: points[points.length - 1]?.longitude ?? fallback.longitude,
+  latitudeDelta: 0.005,
+  longitudeDelta: 0.005,
+};
 
   // Maximized view (No map, full stats)
   if (isMaximized) {
@@ -144,39 +167,46 @@ export default function TrackScreen() {
       </SafeAreaView>
     );
   }
-
+  const insets = useSafeAreaInsets();
   return (
     <View style={styles.container}>
-      // inside TrackScreen's return statement:
-      {Platform.OS !== "web" && (
-        <MapView
-          style={styles.map}
-          region={initialRegion}
-          showsUserLocation
-          followsUserLocation={isTracking}
-        >
-          {points.length > 1 && (
-            <Polyline
-              coordinates={points.map((p) => ({
-                latitude: p.latitude,
-                longitude: p.longitude,
-              }))}
-              strokeColor="#fc4c02"
-              strokeWidth={5}
-            />
-          )}
-          {points.length > 0 && (
-            <Marker
-              coordinate={{
-                latitude: points[0].latitude,
-                longitude: points[0].longitude,
-              }}
-              title="Start"
-              pinColor="green"
-            />
-          )}
-        </MapView>
-      )}
+      <CloseButton
+        style={{
+          position: "absolute",
+          top: insets.top + 10,
+          left: 16,
+          zIndex: 10,
+          backgroundColor: "rgba(0,0,0,0.5)",
+        }}
+      />
+      <MapView
+        style={styles.map}
+        region={initialRegion}
+        showsUserLocation
+        followsUserLocation={isTracking}
+      >
+        {points.length > 1 && (
+          <Polyline
+            coordinates={points.map((p) => ({
+              latitude: p.latitude,
+              longitude: p.longitude,
+            }))}
+            strokeColor="#fc4c02"
+            strokeWidth={5}
+          />
+        )}
+        {points.length > 0 && (
+          <Marker
+            coordinate={{
+              latitude: points[0].latitude,
+              longitude: points[0].longitude,
+            }}
+            title="Start"
+            pinColor="green"
+          />
+        )}
+      </MapView>
+
       {/* Floating Bottom Overlay Card */}
       <SafeAreaView style={styles.overlayContainer} edges={["bottom"]}>
         <View style={styles.overlayCard}>

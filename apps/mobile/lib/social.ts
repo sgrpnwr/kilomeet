@@ -35,3 +35,18 @@ export async function postComment(activityId: string, text: string) {
   const res = await api.post(`/activities/${activityId}/comments`, { text });
   return res.data;
 }
+
+export async function getUserProfile(userId: string) {
+  const res = await api.get(`/users/${userId}`);
+  return res.data;
+}
+
+export async function getUserActivities(userId: string) {
+  const res = await api.get(`/users/${userId}/activities`);
+  return res.data;
+}
+
+export async function updateProfile(name: string) {
+  const res = await api.patch('/me', { name });
+  return res.data;
+}

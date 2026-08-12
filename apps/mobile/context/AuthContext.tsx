@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import * as SecureStore from 'expo-secure-store';
-import { api } from '@/lib/api';
+import { api, setUnauthorizedHandler } from '@/lib/api';
 
 type User = { id: string; email: string; name: string };
 
@@ -38,6 +38,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsLoading(false);
     })();
   }, []);
+
+useEffect(() => {
+  setUnauthorizedHandler(() => {
+    logout();
+  });
+}, []);
 
   async function signup(email: string, password: string, name: string) {
     await api.post('/signup', { email, password, name });

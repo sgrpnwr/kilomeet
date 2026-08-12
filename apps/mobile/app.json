@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "mobile",
-    "slug": "mobile",
+    "name": "kilomeet",
+    "slug": "kilomeet",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "mobile",
+    "scheme": "kilomeet",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
@@ -14,7 +14,7 @@
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Kilomeet needs your location to track your runs and rides, even when the app is in the background."
       },
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.mobile"
+      "bundleIdentifier": "com.anonymous.kilomeet"
     },
     "android": {
       "adaptiveIcon": {
@@ -49,6 +49,18 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": false
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "2c092148-3ece-4eb9-a2e9-1f2d760acf70"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/2c092148-3ece-4eb9-a2e9-1f2d760acf70"
     }
   }
 }
